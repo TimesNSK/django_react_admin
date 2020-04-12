@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.http import HttpRequest, HttpResponse
 from django.urls import path, reverse
 from django.views.generic import TemplateView
+from django.contrib.auth import get_user_model
 from rest_framework import viewsets, permissions, views, pagination
 from django_filters.rest_framework.backends import DjangoFilterBackend
 from rest_framework.decorators import action, MethodMapper
@@ -15,22 +16,26 @@ from rest_framework.routers import DefaultRouter
 from rest_framework.serializers import ModelSerializer
 
 router = DefaultRouter()
+r = Request(HttpRequest())
+r.user = get_user_model()(is_superuser=True)
 
 
 class CustomPageNumberPagination(PageNumberPagination):
     page_size_query_param = 'page_size'  # items per page
 
-def get_serializer_class(model):
+
+def get_serializer_class(model, model_admin):
+    meta_props = {
+        "model": model,
+        "fields": list(model_admin.get_fields(r)),
+        "read_only_fields": model_admin.readonly_fields
+    }
     return type(
         f"{model.__name__}Serializer",
         (ModelSerializer,),
-        {"Meta": type("Meta", (), {"model": model, "fields": "__all__"})},
+        {"Meta": type("Meta", (), meta_props)},
     )
 
-from django.contrib.auth import get_user_model
-
-r = Request(HttpRequest())
-r.user = get_user_model()(is_superuser=True)
 
 for model, model_admin in admin.site._registry.items():
 
@@ -56,7 +61,7 @@ for model, model_admin in admin.site._registry.items():
         "queryset": model.objects.all(),
         "filter_backends": [DjangoFilterBackend, OrderingFilter],
         "info": action(methods=["get"], detail=False)(get_info(model_admin)),
-        "serializer_class": get_serializer_class(model),
+        "serializer_class": get_serializer_class(model, model_admin),
         "basename": model._meta.model_name,
         "request": r,
         "fields": list(model_admin.get_fields(r)),
