@@ -57,8 +57,12 @@ for model, model_admin in admin.site._registry.items():
             )
         return info
 
+    queryset = model.objects.all()
+    if model_admin.list_select_related:
+        queryset = queryset.select_related(*model_admin.list_select_related)
+
     params = {
-        "queryset": model.objects.all(),
+        "queryset": queryset,
         "filter_backends": [DjangoFilterBackend, OrderingFilter],
         "info": action(methods=["get"], detail=False)(get_info(model_admin)),
         "serializer_class": get_serializer_class(model, model_admin),
