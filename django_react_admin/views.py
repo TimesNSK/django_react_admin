@@ -69,6 +69,7 @@ for model, model_admin in admin.site._registry.items():
         "basename": model._meta.model_name,
         "request": r,
         "fields": list(model_admin.get_fields(r)),
+        "filterset_class":  getattr(model_admin, 'filterset_class', None),
         "list_display": list(model_admin.get_list_display(r)),
         "ordering_fields": list(model_admin.get_sortable_by(r)),
         "filterset_fields": list(model_admin.get_list_filter(r)),
