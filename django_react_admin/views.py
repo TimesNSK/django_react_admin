@@ -73,7 +73,10 @@ for model, model_admin in admin.site._registry.items():
         "list_display": list(model_admin.get_list_display(r)),
         "ordering_fields": list(model_admin.get_sortable_by(r)),
         "filterset_fields": list(model_admin.get_list_filter(r)),
-        "permission_classes": [permissions.IsAdminUser, permissions.DjangoModelPermissions],
+        "permission_classes": getattr(
+            model_admin, 'permission_classes',
+            [permissions.IsAdminUser, permissions.DjangoModelPermissions]
+        ),
         "pagination_class": CustomPageNumberPagination
     }
     viewset = type(f"{model.__name__}ViewSet", (viewsets.ModelViewSet,), params)
