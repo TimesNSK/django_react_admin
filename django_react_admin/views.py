@@ -38,7 +38,6 @@ def get_serializer_class(model, model_admin):
 
 
 for model, model_admin in admin.site._registry.items():
-
     def get_info(model_admin):
         def info(*args):
             basic_params = {
@@ -56,6 +55,9 @@ for model, model_admin in admin.site._registry.items():
                     dict(form=form, **basic_params)
             )
         return info
+
+    if not hasattr(model, 'objects'):
+        continue  # Use case: dramatiq.models.Task
 
     queryset = model.objects.all()
     if model_admin.list_select_related:
@@ -135,6 +137,9 @@ class Index(views.APIView):
             app['app_url'] = app['app_url'].replace(reverse('admin:index'), '')
             for m in app['models']:
                 for k in ['add_url', 'admin_url']:
+                    if k not in m or not m[k]:
+                        continue  # Use case: dramatiq.models.Task
+
                     m[k] = m[k].replace(reverse('admin:index'), '')
         return Response(res)
 
