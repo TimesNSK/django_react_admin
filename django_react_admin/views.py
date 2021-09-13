@@ -38,13 +38,24 @@ def get_serializer_class(model, model_admin):
 
 
 for model, model_admin in admin.site._registry.items():
+
+    def get_filterset_fields(model_admin):
+        filterset_fields = []
+        for filterset_field in list(model_admin.get_list_filter(r)):
+            if isinstance(filterset_field, str):
+                filterset_fields.append(filterset_field)
+            else:
+                filterset_fields.append(filterset_field[0])
+
+        return filterset_fields
+
     def get_info(model_admin):
         def info(*args):
             basic_params = {
                 "fields": list(model_admin.get_fields(r)),
                 "list_display": list(model_admin.get_list_display(r)),
                 "ordering_fields": list(model_admin.get_sortable_by(r)),
-                "filterset_fields": list(model_admin.get_list_filter(r)),
+                "filterset_fields": get_filterset_fields(model_admin),
             }
             form = [
                 dict(name=name, **field.widget.__dict__)
@@ -74,7 +85,7 @@ for model, model_admin in admin.site._registry.items():
         "filterset_class":  getattr(model_admin, 'filterset_class', None),
         "list_display": list(model_admin.get_list_display(r)),
         "ordering_fields": list(model_admin.get_sortable_by(r)),
-        "filterset_fields": list(model_admin.get_list_filter(r)),
+        "filterset_fields": get_filterset_fields(model_admin),
         "permission_classes": getattr(
             model_admin, 'permission_classes',
             [permissions.IsAdminUser, permissions.DjangoModelPermissions]
