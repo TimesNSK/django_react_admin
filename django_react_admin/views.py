@@ -36,6 +36,23 @@ def get_serializer_class(model, model_admin):
         {"Meta": type("Meta", (), meta_props)},
     )
 
+def model_views_set_list(self, request, *args, **kwargs):
+    queryset = self.filter_queryset(self.get_queryset())
+
+    page = self.paginate_queryset(queryset)
+    if page is not None:
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+    serializer = self.get_serializer(queryset, many=True)
+    headers = {
+        "X-Total-Count": queryset.count()
+    }
+
+    return Response(
+        serializer.data,
+        headers=headers
+    )
 
 for model, model_admin in admin.site._registry.items():
 
@@ -63,7 +80,7 @@ for model, model_admin in admin.site._registry.items():
                 if not hasattr(field.widget, "widget")
             ]
             return Response(
-                    dict(form=form, **basic_params)
+                dict(form=form, **basic_params),
             )
         return info
 
@@ -90,7 +107,8 @@ for model, model_admin in admin.site._registry.items():
             model_admin, 'permission_classes',
             [permissions.IsAdminUser, permissions.DjangoModelPermissions]
         ),
-        "pagination_class": CustomPageNumberPagination
+        "pagination_class": CustomPageNumberPagination,
+        "list": model_views_set_list
     }
     viewset = type(f"{model.__name__}ViewSet", (viewsets.ModelViewSet,), params)
     router.register(
