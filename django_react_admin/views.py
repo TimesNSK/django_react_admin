@@ -57,12 +57,14 @@ def model_views_set_list(self, request, *args, **kwargs):
 for model, model_admin in admin.site._registry.items():
 
     def get_filterset_fields(model_admin):
-        filterset_fields = []
+        filterset_fields = {}
         for filterset_field in list(model_admin.get_list_filter(r)):
             if isinstance(filterset_field, str):
-                filterset_fields.append(filterset_field)
+                filterset_field_name = filterset_field
             else:
-                filterset_fields.append(filterset_field[0])
+                filterset_field_name = filterset_field[0]
+
+            filterset_fields[filterset_field_name] = ['gte', 'lte', 'exact', 'gt', 'lt']
 
         return filterset_fields
 
