@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import viewsets, permissions, views, pagination
 from django_filters.rest_framework.backends import DjangoFilterBackend
 from rest_framework.decorators import action, MethodMapper
-from rest_framework.filters import OrderingFilter
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.pagination import PageNumberPagination
@@ -95,7 +95,7 @@ for model, model_admin in admin.site._registry.items():
 
     params = {
         "queryset": queryset,
-        "filter_backends": [DjangoFilterBackend, OrderingFilter],
+        "filter_backends": [DjangoFilterBackend, OrderingFilter, SearchFilter],
         "info": action(methods=["get"], detail=False)(get_info(model_admin)),
         "serializer_class": get_serializer_class(model, model_admin),
         "basename": model._meta.model_name,
@@ -105,6 +105,7 @@ for model, model_admin in admin.site._registry.items():
         "list_display": list(model_admin.get_list_display(r)),
         "ordering_fields": list(model_admin.get_sortable_by(r)),
         "filterset_fields": get_filterset_fields(model_admin),
+        "search_fields": list(model_admin.get_search_fields(r)),
         "permission_classes": getattr(
             model_admin, 'permission_classes',
             [permissions.IsAdminUser, permissions.DjangoModelPermissions]
