@@ -24,16 +24,29 @@ class CustomPageNumberPagination(PageNumberPagination):
     page_size_query_param = 'page_size'  # items per page
 
 
-def get_serializer_class(model, model_admin):
+# def get_serializer_class(model, model_admin):
+#     meta_props = {
+#         "model": model,
+#         "fields": list(model_admin.get_fields(r)),
+#         "read_only_fields": model_admin.readonly_fields
+#     }
+#     return type(
+#         f"{model.__name__}Serializer",
+#         (ModelSerializer,),
+#         {"Meta": type("Meta", (), meta_props)},
+#     )
+
+def get_serializer_class(self):
     meta_props = {
-        "model": model,
-        "fields": list(model_admin.get_fields(r)),
-        "read_only_fields": model_admin.readonly_fields
+        "model": self.model,
+        "fields": list(self.model_admin.get_fields(self.request)),
+        "read_only_fields": self.model_admin.readonly_fields
     }
+
     return type(
         f"{model.__name__}Serializer",
         (ModelSerializer,),
-        {"Meta": type("Meta", (), meta_props)},
+        {"Meta": type("Meta", (), meta_props)}
     )
 
 def model_views_set_list(self, request, *args, **kwargs):
@@ -68,39 +81,69 @@ for model, model_admin in admin.site._registry.items():
 
         return filterset_fields
 
-    def get_info(model_admin):
+    # def get_info(model_admin):
+    #     def info(*args):
+    #         basic_params = {
+    #             "fields": list(model_admin.get_fields(r)),
+    #             "list_display": list(model_admin.get_list_display(r)),
+    #             "ordering_fields": list(model_admin.get_sortable_by(r)),
+    #             "filterset_fields": get_filterset_fields(model_admin),
+    #         }
+    #         form = [
+    #             dict(name=name, **field.widget.__dict__)
+    #             for name, field in model_admin.get_form(r)().fields.items()
+    #             if not hasattr(field.widget, "widget")
+    #         ]
+    #         return Response(
+    #             dict(form=form, **basic_params),
+    #         )
+    #     return info
+
+    def get_info(self):
         def info(*args):
             basic_params = {
-                "fields": list(model_admin.get_fields(r)),
-                "list_display": list(model_admin.get_list_display(r)),
-                "ordering_fields": list(model_admin.get_sortable_by(r)),
-                "filterset_fields": get_filterset_fields(model_admin),
+                "fields": list(self.model_admin.get_fields(self.request)),
+                "list_display": list(model_admin.get_list_display(self.request)),
+                "ordering_fields": list(self.model_admin.get_sortable_by(self.request)),
+                "filterset_fields": get_filterset_fields(self.model_admin)
             }
+
             form = [
                 dict(name=name, **field.widget.__dict__)
-                for name, field in model_admin.get_form(r)().fields.items()
+                for name, field in self.model_admin.get_form(self.request)().fields.items()
                 if not hasattr(field.widget, "widget")
             ]
             return Response(
-                dict(form=form, **basic_params),
+                dict(form=form, **basic_params)
             )
+
         return info
+
+    def get_queryset(self):
+        queryset = self.model_admin.get_queryset(self.request)
+
+        return queryset
 
     if not hasattr(model, 'objects'):
         continue  # Use case: dramatiq.models.Task
 
-    queryset = model.objects.all()
+    # queryset = model_admin.get_queryset(r)
     if model_admin.list_select_related:
         queryset = queryset.select_related(*model_admin.list_select_related)
 
     params = {
-        "queryset": queryset,
+        # "queryset": queryset,
+        "model": model,
+        "model_admin": model_admin,
+        "get_queryset": get_queryset,
         "filter_backends": [DjangoFilterBackend, OrderingFilter, SearchFilter],
-        "info": action(methods=["get"], detail=False)(get_info(model_admin)),
-        "serializer_class": get_serializer_class(model, model_admin),
+        # "info": action(methods=["get"], detail=False)(get_info(model_admin)),
+        "info": get_info,
+        # "serializer_class": get_serializer_class(model, model_admin),
+        "get_serializer_class": get_serializer_class,
         "basename": model._meta.model_name,
         "request": r,
-        "fields": list(model_admin.get_fields(r)),
+        # "fields": list(model_admin.get_fields(r)),
         "filterset_class":  getattr(model_admin, 'filterset_class', None),
         "list_display": list(model_admin.get_list_display(r)),
         "ordering_fields": list(model_admin.get_sortable_by(r)),
@@ -108,14 +151,14 @@ for model, model_admin in admin.site._registry.items():
         "search_fields": list(model_admin.get_search_fields(r)),
         "permission_classes": getattr(
             model_admin, 'permission_classes',
-            [permissions.IsAdminUser, permissions.DjangoModelPermissions]
+            [permissions.DjangoModelPermissions]
         ),
         "pagination_class": CustomPageNumberPagination,
         "list": model_views_set_list
     }
     viewset = type(f"{model.__name__}ViewSet", (viewsets.ModelViewSet,), params)
     router.register(
-        f"{model._meta.app_label}/{model._meta.model_name}", viewset
+        f"{model._meta.app_label}/{model._meta.model_name}", viewset, model._meta.model_name
     )
     viewpath = f"{model._meta.app_label}/{model._meta.model_name}"
     # urlpatterns.append(
