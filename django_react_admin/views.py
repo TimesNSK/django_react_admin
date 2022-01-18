@@ -14,6 +14,10 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.reverse import reverse_lazy
 from rest_framework.routers import DefaultRouter
 from rest_framework.serializers import ModelSerializer
+from rest_framework.exceptions import APIException
+from rest_framework import status
+import urllib.parse
+
 
 router = DefaultRouter()
 r = Request(HttpRequest())
@@ -36,17 +40,46 @@ class CustomPageNumberPagination(PageNumberPagination):
 #         {"Meta": type("Meta", (), meta_props)},
 #     )
 
+class MethodNotAllowed(APIException):
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = {'error': True, 'message': 'method not allowed'}
+    default_code = 'method_not_allowed'
+
+
+class IsAllowMethod(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if hasattr(view.model_admin, "get_allowed_request_methods") and request.method in view.model_admin.get_allowed_request_methods(request):
+            return True
+        raise MethodNotAllowed()
+
+
+def to_representation(self, instance):
+    data = super(type(self), self).to_representation(instance)
+    for field in data:
+        if instance._meta.get_field(field).get_internal_type() in ("FileField", "ImageField"):
+            if data[field]:
+                data.update({field: urllib.parse.urlparse(data[field]).path})
+
+    return data
+
 def get_serializer_class(self):
+    params = {
+        "to_representation": to_representation
+    }
+
     meta_props = {
         "model": self.model,
         "fields": list(self.model_admin.get_fields(self.request)),
-        "read_only_fields": self.model_admin.readonly_fields
+        "read_only_fields": self.model_admin.get_readonly_fields(self.request)
     }
 
     return type(
         f"{model.__name__}Serializer",
         (ModelSerializer,),
-        {"Meta": type("Meta", (), meta_props)}
+        {
+            **params,
+            "Meta": type("Meta", (), meta_props)
+        }
     )
 
 def model_views_set_list(self, request, *args, **kwargs):
@@ -103,7 +136,7 @@ for model, model_admin in admin.site._registry.items():
         def info(*args):
             basic_params = {
                 "fields": list(self.model_admin.get_fields(self.request)),
-                "list_display": list(model_admin.get_list_display(self.request)),
+                "list_display": list(self.model_admin.get_list_display(self.request)),
                 "ordering_fields": list(self.model_admin.get_sortable_by(self.request)),
                 "filterset_fields": get_filterset_fields(self.model_admin)
             }
@@ -151,7 +184,7 @@ for model, model_admin in admin.site._registry.items():
         "search_fields": list(model_admin.get_search_fields(r)),
         "permission_classes": getattr(
             model_admin, 'permission_classes',
-            [permissions.DjangoModelPermissions]
+            [IsAllowMethod]
         ),
         "pagination_class": CustomPageNumberPagination,
         "list": model_views_set_list
