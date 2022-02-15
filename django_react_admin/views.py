@@ -17,9 +17,12 @@ from rest_framework.serializers import ModelSerializer
 from rest_framework.exceptions import APIException
 from rest_framework import status
 import urllib.parse
+import json
+from .serializers import ActionSerializer
 
 
 router = DefaultRouter()
+actions_urlpatterns = []
 r = Request(HttpRequest())
 r.user = get_user_model()(is_superuser=True)
 
@@ -27,18 +30,6 @@ r.user = get_user_model()(is_superuser=True)
 class CustomPageNumberPagination(PageNumberPagination):
     page_size_query_param = 'page_size'  # items per page
 
-
-# def get_serializer_class(model, model_admin):
-#     meta_props = {
-#         "model": model,
-#         "fields": list(model_admin.get_fields(r)),
-#         "read_only_fields": model_admin.readonly_fields
-#     }
-#     return type(
-#         f"{model.__name__}Serializer",
-#         (ModelSerializer,),
-#         {"Meta": type("Meta", (), meta_props)},
-#     )
 
 class MethodNotAllowed(APIException):
     status_code = status.HTTP_403_FORBIDDEN
@@ -49,6 +40,12 @@ class MethodNotAllowed(APIException):
 class IsAllowMethod(permissions.BasePermission):
     def has_permission(self, request, view):
         if hasattr(view.model_admin, "get_allowed_request_methods") and request.method in view.model_admin.get_allowed_request_methods(request):
+            return True
+        raise MethodNotAllowed()
+
+class IsAllowAction(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if hasattr(view.model_admin, "get_allowed_actions") and view.action.__name__ in view.model_admin.get_allowed_actions(request):
             return True
         raise MethodNotAllowed()
 
@@ -114,24 +111,6 @@ for model, model_admin in admin.site._registry.items():
 
         return filterset_fields
 
-    # def get_info(model_admin):
-    #     def info(*args):
-    #         basic_params = {
-    #             "fields": list(model_admin.get_fields(r)),
-    #             "list_display": list(model_admin.get_list_display(r)),
-    #             "ordering_fields": list(model_admin.get_sortable_by(r)),
-    #             "filterset_fields": get_filterset_fields(model_admin),
-    #         }
-    #         form = [
-    #             dict(name=name, **field.widget.__dict__)
-    #             for name, field in model_admin.get_form(r)().fields.items()
-    #             if not hasattr(field.widget, "widget")
-    #         ]
-    #         return Response(
-    #             dict(form=form, **basic_params),
-    #         )
-    #     return info
-
     def get_info(self):
         def info(*args):
             basic_params = {
@@ -160,23 +139,18 @@ for model, model_admin in admin.site._registry.items():
     if not hasattr(model, 'objects'):
         continue  # Use case: dramatiq.models.Task
 
-    # queryset = model_admin.get_queryset(r)
     if model_admin.list_select_related:
         queryset = queryset.select_related(*model_admin.list_select_related)
 
     params = {
-        # "queryset": queryset,
         "model": model,
         "model_admin": model_admin,
         "get_queryset": get_queryset,
         "filter_backends": [DjangoFilterBackend, OrderingFilter, SearchFilter],
-        # "info": action(methods=["get"], detail=False)(get_info(model_admin)),
         "info": get_info,
-        # "serializer_class": get_serializer_class(model, model_admin),
         "get_serializer_class": get_serializer_class,
         "basename": model._meta.model_name,
         "request": r,
-        # "fields": list(model_admin.get_fields(r)),
         "filterset_class":  getattr(model_admin, 'filterset_class', None),
         "list_display": list(model_admin.get_list_display(r)),
         "ordering_fields": list(model_admin.get_sortable_by(r)),
@@ -184,7 +158,7 @@ for model, model_admin in admin.site._registry.items():
         "search_fields": list(model_admin.get_search_fields(r)),
         "permission_classes": getattr(
             model_admin, 'permission_classes',
-            [IsAllowMethod]
+            [permissions.IsAuthenticated, IsAllowMethod]
         ),
         "pagination_class": CustomPageNumberPagination,
         "list": model_views_set_list
@@ -194,53 +168,39 @@ for model, model_admin in admin.site._registry.items():
         f"{model._meta.app_label}/{model._meta.model_name}", viewset, model._meta.model_name
     )
     viewpath = f"{model._meta.app_label}/{model._meta.model_name}"
-    # urlpatterns.append(
-    #     path(
-    #         r"html/{}/".format(viewpath),
-    #         TemplateView.as_view(
-    #             template_name="django_react_admin/list.html",
-    #             extra_context={
-    #                 "app": model._meta.app_label,
-    #                 "model": model._meta.model_name,
-    #                 "path": reverse_lazy(model._meta.model_name+"-list"),
-    #             },
-    #         ),
-    #     )
-    # )
-    # urlpatterns.append(
-    #     path(
-    #         r"html/{}/add/".format(viewpath),
-    #         TemplateView.as_view(
-    #             template_name="django_react_admin/edit.html",
-    #             extra_context={
-    #                 "create": True,
-    #                 "app": model._meta.app_label,
-    #                 "model": model._meta.model_name,
-    #                 "path": reverse_lazy(model._meta.model_name + "-list"),
-    #             },
-    #         ),
-    #     )
-    # )
-    # urlpatterns.append(
-    #     path(
-    #         r"html/{}/<pk>/".format(viewpath),
-    #         TemplateView.as_view(
-    #             template_name="django_react_admin/edit.html",
-    #             extra_context={
-    #                 "create": False,
-    #                 "app": model._meta.app_label,
-    #                 "model": model._meta.model_name,
-    #                 "path": reverse_lazy(model._meta.model_name + "-list"),
-    #             },
-    #         ),
-    #     )
-    # )
 
+    if model_admin.actions:
+        for action in model_admin.actions:
+            action_title = action.__name__.replace("_", " ").title().replace(" ", "")
+
+            def method_post(self, request):
+                serializer = self.serializer_class(data=json.loads(request.body))
+                if serializer.is_valid():
+                    queryset = self.model_admin.get_queryset(request).filter(id__in=serializer.validated_data["id"])
+                    self.action(request, queryset)
+                    
+                    return Response("ok")
+                else:
+                    return Response(serializer.errors)
+
+            params = {
+                "permission_classes": [permissions.IsAuthenticated, IsAllowAction],
+                "serializer_class": ActionSerializer,
+                "model_admin": model_admin,
+                "action": action,
+                "post": method_post,
+            }
+            apiview = type(f"{model.__name__}Action{action_title}APIView", (views.APIView,), params)
+
+            actions_urlpatterns.append(path(
+                f"{model._meta.app_label}/{model._meta.model_name}/{action.__name__}/",
+                apiview.as_view(),
+                name=f"{model._meta.model_name}-{action.__name__}"
+            ))
 
 class Index(views.APIView):
     def get(self, request):
         res = admin.site.get_app_list(request)
-        # return Response([m['admin_url'].replace(reverse('admin:index'), '') for app in res for m in app['models']])
         for app in res:
             app['app_url'] = app['app_url'].replace(reverse('admin:index'), '')
             for m in app['models']:
@@ -252,4 +212,4 @@ class Index(views.APIView):
         return Response(res)
 
 
-urlpatterns = [path('', Index.as_view(), name='react_admin_index')] + router.urls
+urlpatterns = [path('', Index.as_view(), name='react_admin_index')] + actions_urlpatterns + router.urls
