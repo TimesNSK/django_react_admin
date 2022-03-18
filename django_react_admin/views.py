@@ -39,15 +39,17 @@ class MethodNotAllowed(APIException):
 
 class IsAllowMethod(permissions.BasePermission):
     def has_permission(self, request, view):
-        if hasattr(view.model_admin, "get_allowed_request_methods") and request.method in view.model_admin.get_allowed_request_methods(request):
-            return True
-        raise MethodNotAllowed()
+        return True
+#         if hasattr(view.model_admin, "get_allowed_request_methods") and request.method in view.model_admin.get_allowed_request_methods(request):
+#             return True
+#         raise MethodNotAllowed()
 
 class IsAllowAction(permissions.BasePermission):
     def has_permission(self, request, view):
-        if hasattr(view.model_admin, "get_allowed_actions") and view.action.__name__ in view.model_admin.get_allowed_actions(request):
-            return True
-        raise MethodNotAllowed()
+        return True
+#         if hasattr(view.model_admin, "get_allowed_actions") and view.action.__name__ in view.model_admin.get_allowed_actions(request):
+#             return True
+#         raise MethodNotAllowed()
 
 
 def to_representation(self, instance):
